@@ -1,0 +1,464 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#041715">
+  <meta name="description" content="Project OMNK is a community effort to develop and maintain tools that improve the experience of every Project SEKAI player and creator.">
+  <title>Project OMNK — In the making</title>
+  <link rel="icon" href="data:,">
+  <link rel="preload" href="./assets/files/jetbrains-mono-latin-400-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <style>
+    @font-face {
+      font-family: 'JetBrains Mono';
+      src: url('./assets/files/jetbrains-mono-latin-400-normal.woff2') format('woff2');
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+    }
+    :root {
+      color-scheme: dark;
+      --background: #041715;
+      --cyan: #7ff3ed;
+      --pink: #f4a5e7;
+      --lemon: #fbf78b;
+      --white: #dce9df;
+      --muted: #82aaa3;
+      --line: 26px;
+      --cell: 10px;
+      --size: 16px;
+      --footer-lines: 1;
+      --gutter-x: clamp(18px, 3.2vw, 64px);
+      --gutter-y: clamp(16px, 3.5vh, 38px);
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; background: var(--background); }
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 400;
+      -webkit-font-smoothing: antialiased;
+    }
+    ::selection { background: var(--cyan); color: var(--background); }
+    #terminal {
+      position: relative;
+      width: 100%;
+      height: 100svh;
+      height: 100dvh;
+      overflow: hidden;
+      color: var(--muted);
+      font-size: var(--size);
+      line-height: var(--line);
+      font-variant-ligatures: none;
+      font-feature-settings: 'liga' 0, 'calt' 0;
+    }
+    #field, #clearance {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    #clock {
+      position: absolute;
+      top: var(--gutter-y);
+      right: var(--gutter-x);
+      margin: 0;
+      white-space: pre;
+    }
+    #purpose {
+      position: absolute;
+      bottom: calc(var(--gutter-y) + (var(--footer-lines) + 1) * var(--line));
+      left: var(--gutter-x);
+      width: min(88ch, calc(100% - 2 * var(--gutter-x)));
+    }
+    #purpose-command { margin: 0; color: var(--pink); white-space: pre; }
+    #mission { margin: 0; color: var(--white); font: inherit; }
+    #mission strong {
+      font-weight: inherit;
+      color: var(--background);
+      -webkit-box-decoration-break: clone;
+      box-decoration-break: clone;
+    }
+    .community { background: var(--cyan); }
+    .tools { background: var(--pink); }
+    .sekai { background: var(--lemon); }
+    #footer {
+      position: absolute;
+      bottom: var(--gutter-y);
+      left: var(--gutter-x);
+      right: var(--gutter-x);
+      display: flex;
+      flex-wrap: wrap;
+      align-items: start;
+      column-gap: calc(2 * var(--cell));
+    }
+    #prompt { margin: 0; color: #eeeeec; white-space: pre; }
+    .user-host { color: #8ae234; font-weight: 700; }
+    .directory { color: #729fcf; font-weight: 700; }
+    #command, #command:visited { color: inherit; text-decoration: none; }
+    #command:focus-visible { outline: none; text-decoration: underline; text-underline-offset: 0.18em; }
+    #motion {
+      flex: 0 0 auto;
+      margin: 0 0 0 auto;
+      padding: 0;
+      height: var(--line);
+      appearance: none;
+      border: 0;
+      border-radius: 0;
+      outline: none;
+      background: transparent;
+      color: var(--muted);
+      font: inherit;
+      white-space: pre;
+      cursor: pointer;
+      touch-action: manipulation;
+    }
+    #motion:hover, #motion:focus-visible { color: var(--lemon); }
+    #motion:focus-visible { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <main id="terminal" aria-label="Project OMNK">
+    <canvas id="field" aria-hidden="true"></canvas>
+    <canvas id="clearance" aria-hidden="true"></canvas>
+    <p id="clock" class="clearance-text" aria-label="Current time"></p>
+    <section id="purpose" aria-label="Purpose">
+      <p id="purpose-command" class="clearance-text" aria-hidden="true">| cat ./purpose</p>
+      <p id="mission" class="clearance-text"><b>Project OMNK</b> is a <strong class="community">community effort</strong> to develop and maintain <strong class="tools">tools</strong> that improve the experience of every <strong class="sekai">Project SEKAI</strong> player and creator.</p>
+    </section>
+    <footer id="footer">
+      <p id="prompt" class="clearance-text"><span class="user-host">omoinoki@omnk.org</span>:<span class="directory">~</span>$ <a id="command" href="https://sekaisync.omnk.org">sekaisync init</a></p>
+      <button id="motion" class="clearance-text" type="button" aria-label="Pause character animation" aria-keyshortcuts="Space" aria-pressed="false">[space] pause </button>
+    </footer>
+  </main>
+  <script>
+    (() => {
+      'use strict';
+      const terminal = document.getElementById('terminal');
+      const canvas = document.getElementById('field');
+      const context = canvas.getContext('2d');
+      const clearance = document.getElementById('clearance');
+      const clearanceContext = clearance.getContext('2d');
+      const textBlocks = document.querySelectorAll('.clearance-text');
+      const clock = document.getElementById('clock');
+      const purposeCommand = document.getElementById('purpose-command');
+      const footer = document.getElementById('footer');
+      const motion = document.getElementById('motion');
+      const reduced = matchMedia('(prefers-reduced-motion: reduce)');
+      const mobile = matchMedia('(max-width: 600px), (max-height: 500px) and (max-width: 1100px)');
+      const colors = ['#24483f', '#385e57', '#82aaa3', '#7ff3ed', '#f4a5e7', '#fbf78b', '#dce9df'];
+      const ramp = '.,:;=+*xX%#@';
+      const spinner = ['|', '/', '-', '\\'];
+      const rows = 31;
+      const artWidth = 1600;
+      const artHeight = 900;
+      const artLine = artHeight / rows;
+      const artSize = artLine * 0.68;
+      const frameInterval = 1000 / 60;
+      const minimumMobileFps = 45;
+      const warmupDuration = 1000;
+      const sampleDuration = 2000;
+      const clockStarted = performance.now();
+      const clocks = [
+        ['UTC', 'UTC'],
+        ['BJT', 'Asia/Shanghai'],
+        ['TYO', 'Asia/Tokyo']
+      ].map(([label, timeZone]) => ({
+        label,
+        formatter: new Intl.DateTimeFormat('en-GB', {
+          timeZone, hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23'
+        })
+      }));
+      let artCell = 0;
+      let artInset = 0;
+      let textCell = 0;
+      let cols = 0;
+      let cells = [];
+      let ready = false;
+      let paused = reduced.matches;
+      let pauseReason = paused ? 'reduced-motion' : '';
+      let manuallyControlled = false;
+      let performanceChecked = false;
+      let probeStarted = null;
+      let sampleStarted = null;
+      let sampleFrames = 0;
+      let compactClock = false;
+      let elapsed = 0;
+      let previous = 0;
+      let nextPaint = 0;
+      let frames = 0;
+      let raf = 0;
+      let resizeTimer = 0;
+      let pointer = 0;
+      let targetPointer = 0;
+      let viewScale = 1;
+      let viewWidth = 0;
+      let firstColumn = 0;
+      let lastColumn = 0;
+      let firstRow = 0;
+      let lastRow = rows - 1;
+
+      function updateClearance() {
+        if (!ready) return;
+        clearanceContext.save();
+        clearanceContext.resetTransform();
+        clearanceContext.clearRect(0, 0, clearance.width, clearance.height);
+        clearanceContext.restore();
+        const bounds = terminal.getBoundingClientRect();
+        const range = document.createRange();
+        for (const block of textBlocks) {
+          const walker = document.createTreeWalker(block, NodeFilter.SHOW_TEXT);
+          let node;
+          while ((node = walker.nextNode())) {
+            const start = node.data.search(/\S/);
+            if (start < 0) continue;
+            range.setStart(node, start);
+            range.setEnd(node, node.data.search(/\s*$/));
+            for (const rect of range.getClientRects()) {
+              if (!rect.width) continue;
+              clearanceContext.fillRect(
+                rect.left - bounds.left - textCell,
+                rect.top - bounds.top - textCell,
+                rect.width + textCell * 2,
+                rect.height + textCell * 2
+              );
+            }
+          }
+        }
+      }
+      function updateOverlay() {
+        const now = Date.now();
+        const active = compactClock
+          ? [clocks[Math.floor((performance.now() - clockStarted) / 10000) % clocks.length]]
+          : clocks;
+        const text = active.map(({ label, formatter }) => `${formatter.format(now)} ${label}`).join('  ');
+        if (clock.textContent !== text) clock.textContent = text;
+        const phase = Math.floor(elapsed / 6000);
+        const spin = paused ? '=' : spinner[Math.floor(elapsed / 1000 * 3) % 4];
+        const command = `${spin} ${['cat ./purpose', 'read ./purpose', 'echo ./purpose'][phase % 3]}`;
+        if (purposeCommand.textContent !== command) purposeCommand.textContent = command;
+        motion.textContent = paused ? '[space] resume' : '[space] pause ';
+        motion.setAttribute('aria-label', paused
+          ? (pauseReason === 'performance' ? 'Resume character animation (paused for performance)' : 'Resume character animation')
+          : 'Pause character animation');
+        motion.setAttribute('aria-pressed', String(paused));
+        terminal.dataset.paused = String(paused);
+        terminal.dataset.pauseReason = pauseReason;
+        updateClearance();
+      }
+      function layout() {
+        const bounds = terminal.getBoundingClientRect();
+        const gutter = parseFloat(getComputedStyle(footer).left);
+        const contentWidth = bounds.width - gutter * 2;
+        const line = bounds.height / rows;
+        const size = Math.min(line * 0.68, contentWidth / (50 * 0.6));
+        context.font = `${size}px 'JetBrains Mono'`;
+        textCell = context.measureText('0').width;
+        terminal.style.setProperty('--line', `${line}px`);
+        terminal.style.setProperty('--size', `${size}px`);
+        terminal.style.setProperty('--cell', `${textCell}px`);
+        const availableColumns = contentWidth / textCell;
+        compactClock = availableColumns < 60;
+        updateOverlay();
+        const footerLines = Math.round(footer.getBoundingClientRect().height / line);
+        terminal.style.setProperty('--footer-lines', String(footerLines));
+        terminal.dataset.footerLines = String(footerLines);
+        terminal.dataset.compactClock = String(compactClock);
+
+        const dpr = Math.min(window.devicePixelRatio || 1, 2);
+        canvas.width = Math.round(bounds.width * dpr);
+        canvas.height = Math.round(bounds.height * dpr);
+        clearance.width = canvas.width;
+        clearance.height = canvas.height;
+        clearanceContext.setTransform(dpr, 0, 0, dpr, 0, 0);
+        clearanceContext.fillStyle = getComputedStyle(terminal).getPropertyValue('--background').trim();
+        viewWidth = bounds.width;
+        viewScale = Math.max(bounds.width / artWidth, bounds.height / artHeight);
+        const offsetX = (bounds.width - artWidth * viewScale) / 2;
+        const offsetY = (bounds.height - artHeight * viewScale) / 2;
+        context.setTransform(dpr * viewScale, 0, 0, dpr * viewScale, dpr * offsetX, dpr * offsetY);
+        context.font = `${artSize}px 'JetBrains Mono'`;
+        context.fontKerning = 'none';
+        context.textBaseline = 'middle';
+        artCell = context.measureText('0').width;
+        cols = Math.floor(artWidth / artCell);
+        artInset = (artWidth - cols * artCell) / 2;
+        firstColumn = Math.max(0, Math.floor((-offsetX / viewScale - artInset) / artCell));
+        lastColumn = Math.min(cols - 1, Math.floor(((bounds.width - offsetX) / viewScale - artInset) / artCell));
+        firstRow = Math.max(0, Math.floor(-offsetY / viewScale / artLine));
+        lastRow = Math.min(rows - 1, Math.floor((bounds.height - offsetY) / viewScale / artLine));
+        cells = Array.from({ length: rows * cols }, () => ({ char: '', tone: -1 }));
+        terminal.dataset.rows = String(rows);
+        terminal.dataset.columns = String(cols);
+        canvas.dataset.aspectRatio = '16:9';
+        canvas.dataset.scale = String(viewScale);
+        canvas.dataset.offsetX = String(offsetX);
+        canvas.dataset.offsetY = String(offsetY);
+        ready = true;
+        render();
+        updateClearance();
+      }
+      function paint(row, col, char, tone) {
+        if (col < firstColumn || col > lastColumn) return;
+        const cell = cells[row * cols + col];
+        if (cell.char === char && cell.tone === tone) return;
+        const x = artInset + col * artCell;
+        const y = row * artLine;
+        context.clearRect(x, y, artCell, artLine);
+        if (char !== ' ') {
+          context.fillStyle = colors[tone];
+          context.fillText(char, x, y + artLine / 2);
+        }
+        cell.char = char;
+        cell.tone = tone;
+      }
+      function render() {
+        const t = elapsed / 1000;
+        const height = rows;
+        const span = cols;
+        for (let row = firstRow; row <= lastRow; row++) {
+          let glyphs = 0;
+          const y = (row / (height - 1) - 0.5) * 2.7;
+          for (let col = 0; col < span; col++) {
+            const x = col / (span - 1);
+            const envelope = Math.pow(Math.sin(x * Math.PI), 0.45);
+            const phase = x * 7.8 + t * 0.22 + pointer * 0.3;
+            const a = Math.sin(phase) * 0.62;
+            const b = Math.sin(phase + 2.2) * 0.52;
+            const da = (y - a) / (0.18 + envelope * 0.2);
+            const db = (y - b) / (0.13 + envelope * 0.16);
+            const layerA = Math.exp(-da * da * 1.6) * envelope;
+            const layerB = Math.exp(-db * db * 1.9) * envelope;
+            const weaveA = 0.42 + 0.58 * Math.pow(Math.sin(x * 54 + y * 9 - t * 0.82), 2);
+            const weaveB = 0.4 + 0.6 * Math.pow(Math.sin(x * 46 - y * 12 + t * 0.62), 2);
+            const density = Math.max(layerA * weaveA, layerB * weaveB);
+            const thread = Math.sin(phase + 1.04) * 0.79;
+            let char = ' ';
+            let tone = 0;
+            if (density > 0.075) {
+              char = ramp[Math.min(ramp.length - 1, Math.floor(density * 13))];
+              tone = layerA >= layerB ? (density > 0.26 ? 3 : 1) : (density > 0.26 ? 4 : 1);
+            } else {
+              const dust = Math.sin(col * 127.1 + row * 311.7 + Math.floor(t * 2) * 0.13) * 43758.5453;
+              if (dust - Math.floor(dust) > 0.974) { char = '.'; tone = 1; }
+            }
+            if (Math.abs(y - thread) < 0.063 && x > 0.06 && x < 0.94) {
+              char = density > 0.2 ? '+' : ':';
+              tone = 5;
+            }
+            if (char !== ' ') glyphs++;
+            paint(row, col, char, tone);
+          }
+          if (glyphs === 0) paint(row, Math.floor((t * 2 + row * 17) % span), '.', 1);
+        }
+        terminal.dataset.frame = String(frames);
+      }
+      function resetProbe() {
+        probeStarted = null;
+        sampleStarted = null;
+        sampleFrames = 0;
+      }
+      function checkPerformance(now) {
+        if (!mobile.matches || manuallyControlled || performanceChecked) return;
+        if (probeStarted === null) probeStarted = now;
+        if (now - probeStarted < warmupDuration) return;
+        if (sampleStarted === null) {
+          sampleStarted = now;
+          sampleFrames = 0;
+          return;
+        }
+        sampleFrames++;
+        const duration = now - sampleStarted;
+        if (duration < sampleDuration) return;
+        const fps = sampleFrames * 1000 / duration;
+        performanceChecked = true;
+        terminal.dataset.sampledFps = fps.toFixed(1);
+        if (fps < minimumMobileFps) {
+          paused = true;
+          pauseReason = 'performance';
+          stop();
+          updateOverlay();
+        }
+      }
+      function tick(now) {
+        raf = 0;
+        if (paused || document.hidden) return;
+        const delta = previous ? Math.min(now - previous, 200) : 0;
+        elapsed += delta;
+        previous = now;
+        pointer += (targetPointer - pointer) * (1 - Math.pow(0.96, delta / (1000 / 120)));
+        if (!nextPaint) nextPaint = now;
+        if (now >= nextPaint - 0.5) {
+          frames++;
+          render();
+          nextPaint += frameInterval;
+          if (now - nextPaint >= frameInterval) nextPaint = now + frameInterval;
+          checkPerformance(now);
+        }
+        if (!paused) raf = requestAnimationFrame(tick);
+      }
+      function stop() {
+        cancelAnimationFrame(raf);
+        raf = 0;
+        previous = 0;
+        nextPaint = 0;
+        if (!performanceChecked) resetProbe();
+      }
+      function start() {
+        if (ready && !paused && !document.hidden && !raf) raf = requestAnimationFrame(tick);
+      }
+      function toggle() {
+        if (!ready) return;
+        manuallyControlled = true;
+        paused = !paused;
+        pauseReason = paused ? 'manual' : '';
+        stop();
+        updateOverlay();
+        start();
+      }
+      motion.addEventListener('click', toggle);
+      document.addEventListener('keydown', event => {
+        if (event.code !== 'Space' || event.repeat || event.altKey || event.ctrlKey || event.metaKey) return;
+        if (event.target === motion) return;
+        event.preventDefault();
+        toggle();
+      });
+      document.addEventListener('pointermove', event => {
+        targetPointer = (event.clientX - viewWidth / 2) / (artWidth * viewScale);
+      }, { passive: true });
+      document.addEventListener('pointerleave', () => { targetPointer = 0; });
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) stop();
+        else { updateOverlay(); start(); }
+      });
+      reduced.addEventListener('change', event => {
+        paused = event.matches;
+        pauseReason = paused ? 'reduced-motion' : '';
+        stop();
+        updateOverlay();
+        start();
+      });
+      mobile.addEventListener('change', () => {
+        performanceChecked = false;
+        resetProbe();
+        if (!mobile.matches && pauseReason === 'performance') {
+          paused = false;
+          pauseReason = '';
+          updateOverlay();
+          start();
+        }
+      });
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(layout, 100);
+      });
+      document.fonts.ready.then(() => {
+        layout();
+        start();
+        setInterval(updateOverlay, 1000);
+        terminal.dataset.ready = 'true';
+      });
+    })();
+  </script>
+</body>
+</html>
