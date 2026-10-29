@@ -126,12 +126,27 @@
       flex-wrap: wrap;
       align-items: start;
       column-gap: calc(2 * var(--cell));
+      row-gap: var(--line);
     }
     #prompt { margin: 0; color: #eeeeec; white-space: pre; }
     .user-host { color: #8ae234; font-weight: 700; }
     .directory { color: #729fcf; font-weight: 700; }
     #command, #command:visited { color: inherit; text-decoration: none; }
     #command:focus-visible { outline: none; text-decoration: underline; text-underline-offset: 0.18em; }
+    #cursor {
+      display: inline-block;
+      width: var(--cell);
+      height: 1.2em;
+      vertical-align: -0.2em;
+      background: currentColor;
+      animation: cursor-blink 1.2s step-end infinite;
+    }
+    #cursor[hidden] { display: none; }
+    #terminal[data-paused="true"] #cursor { animation: none; }
+    @keyframes cursor-blink { 50% { opacity: 0; } }
+    @media (prefers-reduced-motion: reduce) {
+      #cursor { animation: none; }
+    }
     #motion {
       flex: 0 0 auto;
       margin: 0 0 0 auto;
@@ -162,7 +177,7 @@
       <p id="mission" class="clearance-text"><b>Project OMNK</b> is a <strong class="community">community effort</strong> to develop and maintain <strong class="tools">tools</strong> that improve the experience of every <strong class="sekai">Project SEKAI</strong> player and creator.</p>
     </section>
     <footer id="footer">
-      <p id="prompt" class="clearance-text"><span class="user-host">omoinoki@omnk.org</span>:<span class="directory">~</span>$ <a id="command" href="https://sekaisync.omnk.org">sekaisync init</a></p>
+      <p id="prompt" class="clearance-text"><span class="user-host">omoinoki@omnk.org</span>:<span class="directory">~</span>$ <a id="command" href="https://sekaisync.omnk.org">sekaisync init</a><span id="cursor" aria-hidden="true"> </span></p>
       <button id="motion" class="clearance-text" type="button" aria-label="Pause character animation" aria-keyshortcuts="Space" aria-pressed="false">[space] pause </button>
     </footer>
   </main>
@@ -179,6 +194,8 @@
       const purposeCommand = document.getElementById('purpose-command');
       const footer = document.getElementById('footer');
       const motion = document.getElementById('motion');
+      const cursor = document.getElementById('cursor');
+      const prompt = document.getElementById('prompt');
       const reduced = matchMedia('(prefers-reduced-motion: reduce)');
       const mobile = matchMedia('(max-width: 600px), (max-height: 500px) and (max-width: 1100px)');
       const colors = ['#24483f', '#385e57', '#82aaa3', '#7ff3ed', '#f4a5e7', '#fbf78b', '#dce9df'];
@@ -260,6 +277,15 @@
             }
           }
         }
+        if (!cursor.hidden) {
+          const rect = cursor.getBoundingClientRect();
+          clearanceContext.fillRect(
+            rect.left - bounds.left - textCell,
+            rect.top - bounds.top - textCell,
+            rect.width + textCell * 2,
+            rect.height + textCell * 2
+          );
+        }
       }
       function updateOverlay() {
         const now = Date.now();
@@ -285,8 +311,11 @@
         const bounds = terminal.getBoundingClientRect();
         const gutter = parseFloat(getComputedStyle(footer).left);
         const contentWidth = bounds.width - gutter * 2;
-        const line = bounds.height / rows;
-        const size = Math.min(line * 0.68, contentWidth / (50 * 0.6));
+        const preferredSize = Math.max(14, bounds.height / rows * 0.68);
+        context.font = `${preferredSize}px 'JetBrains Mono'`;
+        const promptWidth = context.measureText(prompt.textContent).width;
+        const size = Math.min(preferredSize, preferredSize * contentWidth / promptWidth);
+        const line = Math.max(bounds.height / rows, size / 0.68);
         context.font = `${size}px 'JetBrains Mono'`;
         textCell = context.measureText('0').width;
         terminal.style.setProperty('--line', `${line}px`);
@@ -457,6 +486,21 @@
         if (event.target === motion) return;
         event.preventDefault();
         toggle();
+      });
+      document.addEventListener('keydown', event => {
+        if (cursor.hidden || event.defaultPrevented || !event.isTrusted || event.repeat || event.isComposing || event.keyCode === 229) return;
+        if (event.key !== 'Enter' || (event.code !== 'Enter' && event.code !== 'NumpadEnter')) return;
+        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || event.target === motion) return;
+        event.preventDefault();
+        cursor.hidden = true;
+        window.open('https://github.com/omoinoki/sekaisync', '_blank', 'noopener,noreferrer');
+        layout();
+      });
+      window.addEventListener('pageshow', event => {
+        if (event.persisted) {
+          cursor.hidden = false;
+          layout();
+        }
       });
       document.addEventListener('pointermove', event => {
         targetPointer = (event.clientX - viewWidth / 2) / (artWidth * viewScale);
